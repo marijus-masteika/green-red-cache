@@ -30,10 +30,9 @@ describe('cache tests', async () => {
             await cache.get("x");
         } catch (err) { }
         await timeout(100);
-        assert.equal(error, true);
-        assert.deepEqual(cache.cache.x, {
-            key: 'x',
-            time: cache.cache.x.time
+        assert.strictEqual(error, true);
+        assert.deepStrictEqual(cache.cache.x, {
+            key: 'x'
         });
     });
 
@@ -45,12 +44,12 @@ describe('cache tests', async () => {
 
         try {
             rez = await cache.get("x");
-            assert.equal(rez, 0);
+            assert.strictEqual(rez, 0);
         } catch (err) {
             throw new Error("should not fail");
         }
         await timeout(100);
-        assert.deepEqual(cache.cache.x, {
+        assert.deepStrictEqual(cache.cache.x, {
             key: 'x',
             value: 0,
             time: cache.cache.x.time
@@ -58,8 +57,6 @@ describe('cache tests', async () => {
     });
 
     it("Using A", async function () {
-
-
 
         let cnt = 0;
         const cache = new cc(async key => {
@@ -80,41 +77,40 @@ describe('cache tests', async () => {
         let rez;
 
         rez = await cache.get("x");
-        assert.equal(rez, 1);
+        assert.strictEqual(rez, 1);
 
         await timeout(1000);
         rez = await cache.get("x");
-        assert.equal(rez, 1);
+        assert.strictEqual(rez, 1);
 
         await timeout(1000);
         rez = await cache.get("x");
-        assert.equal(rez, 1);
+        assert.strictEqual(rez, 1);
 
         await timeout(1000);
         rez = await cache.get("x");
-        assert.equal(rez, 1);
+        assert.strictEqual(rez, 1);
 
         await timeout(1000);
         rez = await cache.get("x");
-        assert.equal(rez, 2);
+        assert.strictEqual(rez, 2);
 
         await timeout(1000);
         rez = await cache.get("x");
-        assert.equal(rez, 2);
+        assert.strictEqual(rez, 2);
 
         await timeout(1000);
         rez = await cache.get("x");
-        assert.equal(rez, 2);
+        assert.strictEqual(rez, 2);
 
         await timeout(1000);
         rez = await cache.get("x");
-        assert.equal(rez, 2);
+        assert.strictEqual(rez, 2);
 
 
     });
 
     it("#fail and then succeed", async function () {
-
 
         let cnt = 0;
         const cache = new cc(async key => {
@@ -132,17 +128,87 @@ describe('cache tests', async () => {
 
         try {
             rez = await cache.get("x");
-            assert.equal(rez, 0);
+            assert.strictEqual(rez, 0);
         } catch (err) {
             throw new Error("should not fail");
         }
 
-        assert.deepEqual(cache.cache.x, {
+        assert.deepStrictEqual(cache.cache.x, {
             key: 'x',
             value: 0,
             time: cache.cache.x.time
         });
     });
+
+    it("#garbage collection", async function () {
+
+        const cache = new cc(async key => {
+            await timeout(10);
+            return Promise.resolve("ok");
+        }, {
+            green_period: 100,
+            red_period: 100
+        });
+
+        cache.get("a");
+        cache.update("b");
+        cache.cache.d = {
+            key: "d"
+        };
+
+        await timeout(300);
+
+        cache.get("c");
+
+        let keys = [...cache.garbage()];
+        assert.strictEqual(keys.length, 3);
+        assert.deepStrictEqual(keys, ["a", "b", "d"]);
+
+        for (const key of cache.garbage()) {
+            if (key === "a") cache.update(key);
+            if (key === "b") {
+                cache.update("b");
+                cache.clear("b");
+            }
+        }
+
+        keys = [...cache.garbage()];
+        assert.deepStrictEqual(keys, ["d"]);
+    });
+
+    it("#preheating", async function () {
+
+        const cache = new cc(async key => {
+            await timeout(10);
+            return Promise.resolve("ok");
+        }, {
+            green_period: 100,
+            red_period: 1000
+        });
+
+        cache.get("a");
+        cache.get("b");
+
+        await timeout(200);
+
+        cache.get("c");
+
+        let keys = [...cache.passing()];
+        assert.strictEqual(keys.length, 2);
+        assert.deepStrictEqual(keys, ["a", "b"]);
+    });
+
+
+    it("#0 is a valid value", async function () {
+
+        const cache = new cc(async key => {
+            return Promise.resolve(0);
+        });
+        const rez = await cache.get(0);
+        assert.strictEqual(rez, 0);
+        assert(cache.value_is_green(0));
+    });
+
 
     describe("#getgreen()", async () => {
         let cache;
@@ -154,16 +220,16 @@ describe('cache tests', async () => {
             });
         });
         it("no entry, shall return false", async function () {
-            assert.equal(cache.getgreen("x"), false);
+            assert.strictEqual(cache.getgreen("x"), false);
         });
         it("entry created, shall return value", async function () {
             await cache.get("x");
-            assert.equal(cache.getgreen("x"), "ok");
+            assert.strictEqual(cache.getgreen("x"), "ok");
         });
         it("entry expired, shall return false", async function () {
             this.timeout(10000);
             await timeout(2000);
-            assert.equal(cache.getgreen("x"), false);
+            assert.strictEqual(cache.getgreen("x"), false);
         });
     });
 
@@ -176,22 +242,22 @@ describe('cache tests', async () => {
             });
         });
         it("no effect on cache", async function () {
-            assert.equal(cache.getgreen("x"), false);
-            cache.cancel("x");
-            assert.equal(cache.getgreen("x"), false);
+            assert.strictEqual(cache.getgreen("x"), false);
+            cache.clear("x");
+            assert.strictEqual(cache.getgreen("x"), false);
         });
         it("shall return new value", async function () {
-            assert.equal(await cache.get("x"), 1);
+            assert.strictEqual(await cache.get("x"), 1);
         });
         it("shall return from cache", async function () {
-            assert.equal(await cache.getgreen("x"), 1);
-            assert.equal(await cache.get("x"), 1);
+            assert.strictEqual(await cache.getgreen("x"), 1);
+            assert.strictEqual(await cache.get("x"), 1);
         });
         it("shall return new value after cancel", async function () {
-            cache.cancel("x");
-            assert.equal(await cache.getgreen("x"), false);
-            assert.equal(await cache.get("x"), 2);
-            assert.equal(await cache.getgreen("x"), 2);
+            cache.clear("x");
+            assert.strictEqual(await cache.getgreen("x"), false);
+            assert.strictEqual(await cache.get("x"), 2);
+            assert.strictEqual(await cache.getgreen("x"), 2);
         });
     });
 

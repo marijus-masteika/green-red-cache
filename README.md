@@ -1,49 +1,92 @@
 # Green/Red Cache
 
-Caches a promise of an async function for "green" and "red" periods.
+Caches a return of an async function for "green" and "red" periods.
 
-A caller calls the cache. If the cache is empty or expired - calls the async function, then stores and returns the _promise_ to the caller.
+- **Cache miss**: calls the async function, then caches and returns the _promise_.
+- **Green period**: returns a cached promise of the async function or its resolved value.
+- **Red period**: same as during the _green_ period, plus initiates a separate thread to update the cache.
 
-Subsequen calls to the cache:
-
-- During the _green_ period: returns the promise to callers from the cache.
-- During the _red_ period: still returns the promise from cache but initiates a parallel cache update promise.
-
-## Init the cache
+## Construct the cache
 
 ```js
-const CacheControl = require("green-red-cache");
-const cache = new CacheControl(
-	async (key) => {
-		return await retrieveValueFromBackend(key)
-	},
-	{
-		green_period: 60000, // cache is considered to be "green" during 1 min. Default is 15000
-        red_period: 360000 // cache is still valid during 1 hour, but a separate parallel promise to be created to update the cache. Default is 15000
-        timeout: 30000 // async function should complete in 30 sec. otherwise - timeout exception. No timeout used by default.
-	}
-)
+const CacheControl = require('green-red-cache')
+const cache = new CacheControl(async (key) => {
+	return await retrieveValueFromBackend(key)
+}, options)
 ```
 
-## Retrieve the value
+### options
+
+Type: `object`\
+Optional: `true`
+
+Optional cache initialization parameters.
+
+#### green_period
+
+Type: `number`\
+Optional: `true`\
+Default: `15000`
+
+How many milliseconds a value in the cache to be considered _green_.
+
+#### red_period
+
+Type: `number`\
+Optional: `true`\
+Default: `15000`
+
+How many milliseconds a value in the cache to be considered _red_.
+
+#### timeout
+
+Type: `number`\
+Optional: `true`\
+Default: undefined
+
+How many milliseconds the async function has to complete before timeout exception raised.
+
+## Getting value
 
 ```js
 const value = await cache.get('my_key')
 ```
 
-or
+## Try getting value without _await_
 
 ```js
 const value = cache.getgreen('my_key') || (await cache.get('my_key'))
 ```
 
-## Invalidate cache
+## Invalidate a cache entry
 
 ```js
-cache.cancel('my_key')
+cache.clear('my_key')
 ```
 
-## catching errors during parallel updates
+## Force an update of a cache entry
+
+```js
+cache.update('my_key')
+```
+
+## Remove garbage from the cache
+
+```js
+setInterval(() => {
+	for (const key of caches.garbage()) cache.clear(key)
+}, 3600000)
+```
+
+## Keep cache hot
+
+```js
+setInterval(() => {
+	for (const key of caches.passing()) cache.get(key)
+}, 60000)
+```
+
+## Handle parallel cache update errors
 
 ```js
 cache.on('fail', (key, error) => {

@@ -21,49 +21,43 @@ module.exports = class CacheControl extends EventEmitter {
     }
 
     getgreen(key) {
-
-        //if (entry) this.cache[key].demanded = true;
-
-        if (this._is_cache_value_green(this.cache[key])) return this.cache[key].value;
-        else return false;
-
+        return this.value_is_green(key) ? this.cache[key].value : false;
     }
 
     async get(key) {
 
-        if (this._is_no_cache_value(this.cache[key]) || this._is_time_to_update_cache(this.cache[key])) {
-            this._create_promise(key).catch(err => { });
-        }
+        if (this.value_is_empty(key) || this.value_update_is_needed(key)) this.update(key).catch(err => { });
 
-        if (this._is_cache_value_valid(this.cache[key])) {
-            return this.cache[key].value;
-        }
-
-        return this.cache[key].promise;
+        return this.value_is_valid(key) ? this.cache[key].value : this.cache[key].promise;
 
     }
 
-    _is_cache_value_green(entry) {
-        return entry && entry.value && (entry.time + this.green_period) > Date.now();
+    value_is_green(key) {
+        return !this.value_is_empty(key) && (this.cache[key].time + this.green_period) > Date.now();
     }
 
-    _is_cache_value_valid(entry) {
-        return entry && entry.value && (entry.time + this.cache_validity) > Date.now();
+    value_is_valid(key) {
+        return !this.value_is_empty(key) && (this.cache[key].time + this.cache_validity) > Date.now();
     }
 
-    _is_no_cache_value(entry) {
-        return !entry || !entry.value;
+    value_is_empty(key) {
+        return !(this.cache[key] && this.cache[key].value !== undefined);
     }
 
-    _is_time_to_update_cache(entry) {
-        return entry && !entry.promise && (entry.time + this.green_period) < Date.now();
+    value_update_is_needed(key) {
+        return !this.value_is_empty(key) && (this.cache[key].time + this.green_period) < Date.now();
     }
 
-    cancel(key) {
-        if (this.cache[key]) delete this.cache[key].value;
+    entry_is_garbage(key) {
+        return this.cache[key] && !this.cache[key].promise && !this.value_is_valid(key);
     }
 
-    async fetch(key) {
+    clear(key) {
+        if (this.cache[key] && this.cache[key].promise) delete this.cache[key].value;
+        else delete this.cache[key];
+    }
+
+    async _fetch(key) {
         if (this.timeout) {
             return await Promise.race([
                 new Promise((resolve, reject) => setTimeout(() => reject("timeout"), this.timeout)),
@@ -73,33 +67,38 @@ module.exports = class CacheControl extends EventEmitter {
         else return this.async_resource_fn(key);
     }
 
-    _create_promise(key) {
+    async update(key) {
 
-        const cc = this;
+        const update_promise = this._fetch(key);
 
-        if (!cc.cache[key]) cc.cache[key] = {
-            key: key,
-            time: Date.now()
-        };
+        const self = this;
+        if (!self.cache[key]) self.cache[key] = { key };
+        self.cache[key].promise = update_promise;
 
-        cc.cache[key].promise = this.fetch(key);
-
-        cc.cache[key].promise
+        update_promise
             .then(value => {
-                cc.cache[key] = {
+                self.cache[key] = {
                     key: key,
                     time: Date.now(),
                     value: value
                 };
             })
             .catch(err => {
-                cc.emit("fail", key, err);
+                self.emit("fail", key, err);
             })
             .finally(() => {
-                if (cc.cache[key]) delete cc.cache[key].promise;
+                if (self.cache[key]) delete self.cache[key].promise;
             });
 
-        return cc.cache[key].promise;
+        return update_promise;
+    }
+
+    *garbage() {
+        for (const key in this.cache) if (this.entry_is_garbage(key)) yield (key);
+    }
+
+    *passing() {
+        for (const key in this.cache) if (this.value_update_is_needed(key)) yield (key);
     }
 
 };
