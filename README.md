@@ -74,7 +74,7 @@ cache.update('my_key')
 
 ```js
 setInterval(() => {
-	for (const key of caches.garbage()) cache.clear(key)
+	for (const key of cache.garbage()) cache.clear(key)
 }, 3600000)
 ```
 
@@ -82,7 +82,7 @@ setInterval(() => {
 
 ```js
 setInterval(() => {
-	for (const key of caches.passing()) cache.get(key)
+	for (const key of cache.passing()) cache.get(key)
 }, 60000)
 ```
 
